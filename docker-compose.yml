@@ -1,0 +1,17 @@
+services:
+  hdcaster:
+    build: .
+    # For using prebuilt images from DockerHub:
+    # image: ghcr.io/yourusername/hdcaster:latest
+    container_name: hdcaster
+    restart: always
+    ports:
+      - "2101:2101" # NTRIP Caster
+      - "8080:8080" # Admin UI
+    volumes:
+      - hdcaster_data:/var/lib/hdcaster
+    # environment:
+    #  - ANY_ADDITIONAL_ENV_VARS=true
+
+volumes:
+  hdcaster_data:

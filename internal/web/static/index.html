@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light" />
+  <title>HD Caster Admin</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script defer src="./app.js"></script>
+</head>
+
+<body>
+  <section id="authScreen" class="auth-screen">
+    <div class="auth-panel">
+      <p class="eyebrow">HDGNSS Caster Auth</p>
+      <h2 data-i18n="auth.title">登录后台</h2>
+      <form id="loginForm" class="form auth-form">
+        <label>
+          <span data-i18n="auth.username">用户名</span>
+          <input name="username" autocomplete="username" />
+        </label>
+        <label>
+          <span data-i18n="auth.password">密码</span>
+          <input name="password" type="password" autocomplete="current-password" />
+        </label>
+        <button id="passwordLoginBtn" class="button button-primary" type="submit"
+          data-i18n="auth.loginBtn">用户名密码登录</button>
+      </form>
+      <div id="authDivider" class="auth-divider"><span data-i18n="auth.or">或</span></div>
+      <button id="oidcLoginBtn" class="button button-secondary auth-oidc" type="button">HDGNSS 登录</button>
+      <p id="authMessage" class="auth-message muted"></p>
+    </div>
+  </section>
+  <div class="bg-orb bg-orb-a"></div>
+  <div class="bg-orb bg-orb-b"></div>
+  <div id="appShell" class="shell shell-hidden">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">HDGNSS Caster Admin</p>
+        <h1>HDGNSS Caster</h1>
+      </div>
+      <div class="topbar-actions">
+        <button id="logoutBtn" class="button button-secondary" type="button" data-i18n="topbar.logout">退出登录</button>
+        <button id="refreshBtn" class="button button-primary" type="button" data-i18n="topbar.refresh">刷新数据</button>
+        <button id="backupSqliteBtn" class="button button-secondary" type="button" data-i18n="topbar.backup">备份</button>
+        <label class="status-pill">
+          <span class="dot"></span>
+          <span id="connectionStatus">等待 API</span>
+        </label>
+      </div>
+    </header>
+    <nav class="page-tabs">
+      <button id="tabHome" class="tab-button" type="button" data-page="home" data-i18n="tab.status">状态</button>
+      <button id="tabUsers" class="tab-button" type="button" data-page="users" data-i18n="tab.config">配置</button>
+      <button id="tabSettings" class="tab-button" type="button" data-page="settings" data-i18n="tab.system">系统</button>
+    </nav>
+    <section id="securityNotice" class="panel notice-panel page-hidden">
+      <div class="panel-head">
+        <div>
+          <p class="panel-kicker" data-i18n="notice.kicker">安全提示</p>
+          <h2 data-i18n="notice.title">默认管理员仍在使用初始凭据</h2>
+        </div>
+        <button id="openSettingsFromNotice" class="button button-primary" type="button"
+          data-i18n="notice.btn">前往系统</button>
+      </div>
+      <p class="muted" data-i18n="notice.desc">首次运行且未启用 OIDC 时默认允许本地密码访问。<br>为了系统安全，请尽快使用此账号进入系统修改密码。</p>
+    </section>
+
+    <main class="grid">
+      <!-- ================================================================ -->
+      <!-- PAGE: 状态 Status -->
+      <!-- ================================================================ -->
+      <section id="pageHome" class="page-section">
+        <section class="panel panel-hero">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker" data-i18n="status.overview.kicker">概览仪表盘</p>
+              <h2 data-i18n="status.overview.title">运行态总览</h2>
+            </div>
+            <div class="mini-metrics" id="miniMetrics"></div>
+          </div>
+          <div class="cards" id="overviewCards"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker" data-i18n="status.sources.kicker">在线状态</p>
+              <h2 data-i18n="status.sources.title">在线数据源</h2>
+            </div>
+            <span class="muted" id="lastUpdated">尚未加载</span>
+          </div>
+          <div class="list list-four-column" id="onlineSources"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker" data-i18n="status.mounts.kicker">在线状态</p>
+              <h2 data-i18n="status.mounts.title">在线挂载点</h2>
+            </div>
+          </div>
+          <div class="list list-four-column" id="mountpoints"></div>
+        </section>
+
+        <section class="panel panel-wide">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker" data-i18n="status.mountDetail.kicker">挂载点详情</p>
+              <h2 data-i18n="status.mountDetail.title">选中挂载点的元数据与</h2>
+            </div>
+          </div>
+          <div class="detail" id="mountDetail"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker" data-i18n="status.relay.kicker">中继状态</p>
+              <h2 data-i18n="status.relay.title">中继运行态</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="relay-state-table">
+              <thead>
+                <tr>
+                  <th data-i18n="col.status">状态</th>
+                  <th data-i18n="col.relay">中继</th>
+                  <th data-i18n="col.upstream">上游</th>
+                  <th data-i18n="col.accountPool">账号池</th>
+                  <th data-i18n="col.runtime">运行态</th>
+                  <th data-i18n="col.cluster">聚类</th>
+                </tr>
+              </thead>
+              <tbody id="relayTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker" data-i18n="status.rejects.kicker">中继告警</p>
+              <h2 data-i18n="status.rejects.title">最近拒绝事件</h2>
+            </div>
+          </div>
+          <div class="detail" id="relayRejects"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker" data-i18n="status.audit.kicker">系统审计</p>
+              <h2 data-i18n="status.audit.title">最近审计事件</h2>
+            </div>
+          </div>
+          <div class="detail detail-three" id="auditEvents"></div>
+        </section>
+
+
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- PAGE: 配置 Config -->
+      <!-- ================================================================ -->
+      <section id="pageUsers" class="page-section page-hidden">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker" data-i18n="config.users.kicker">用户管理</p>
+              <h2 data-i18n="config.users.title">账号与权限</h2>
+            </div>
+          </div>
+          <div class="split split-wide">
+            <form class="card form" id="userForm">
+              <h3 data-i18n="config.users.formTitle">新增或更新用户</h3>
+              <input name="mode" type="hidden" value="create" />
+              <label>
+                <span data-i18n="config.users.role">用户类型</span>
+                <select name="role">
+                  <option value="client">Client</option>
+                  <option value="source">Source</option>
+                </select>
+              </label>
+              <label>
+                <span data-i18n="config.users.username">用户名</span>
+                <input name="username" placeholder="operator01" required />
+              </label>
+              <label>
+                <span data-i18n="config.users.password">密码</span>
+                <input name="password" type="password" placeholder="新增用户必填；编辑留空则不修改" />
+              </label>
+              <label>
+                <span data-i18n="config.users.mounts">挂载点权限</span>
+                <input name="mounts" placeholder="*,BKG1,RTCM3" />
+              </label>
+              <label>
+                <span data-i18n="config.users.note">备注</span>
+                <textarea name="note" rows="3" placeholder="可选说明"></textarea>
+              </label>
+              <button class="button button-primary" type="submit" data-i18n="config.users.save">保存用户</button>
+            </form>
+            <div class="table-card">
+              <h3 data-i18n="config.users.listTitle">所有用户</h3>
+              <div class="table-toolbar">
+                <input id="userSearch" placeholder="搜索用户名、类型、权限 Search username / type / permissions" />
+                <span id="userCount" class="muted"></span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th data-i18n="col.type">类型</th>
+                      <th data-i18n="col.username">用户名</th>
+                      <th data-i18n="col.permissions">权限</th>
+                      <th data-i18n="col.status">状态</th>
+                      <th data-i18n="col.actions">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="userTable"></tbody>
+                </table>
+              </div>
+              <div class="pager">
+                <button id="userPrevBtn" class="button button-secondary" type="button"
+                  data-i18n="pager.prev">上一页</button>
+                <span id="userPageInfo" class="muted"></span>
+                <button id="userNextBtn" class="button button-secondary" type="button"
+                  data-i18n="pager.next">下一页</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker" data-i18n="config.mounts.kicker">挂载点配置</p>
+              <h2 data-i18n="config.mounts.title">新增或更新挂载点元数据</h2>
+            </div>
+          </div>
+          <div class="split split-wide">
+            <form class="card form" id="mountForm">
+              <h3 data-i18n="config.mounts.formTitle">挂载点编辑</h3>
+              <div class="form-grid">
+                <label>
+                  <span data-i18n="config.mounts.name">挂载点名称</span>
+                  <input name="name" placeholder="MOUNT01" required />
+                </label>
+                <label>
+                  <span data-i18n="config.mounts.lat">纬度</span>
+                  <input name="latitude" type="number" step="0.000001" placeholder="31.2304" />
+                </label>
+                <label>
+                  <span data-i18n="config.mounts.lon">经度</span>
+                  <input name="longitude" type="number" step="0.000001" placeholder="121.4737" />
+                </label>
+                <label>
+                  <span data-i18n="config.mounts.decode">解码候选</span>
+                  <select name="decodeCandidate">
+                    <option value="true" data-i18n="opt.yes">是</option>
+                    <option value="false" data-i18n="opt.no">否</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                <span data-i18n="config.mounts.desc">描述</span>
+                <textarea name="description" rows="3" placeholder="基站用途、区域、特色等"></textarea>
+              </label>
+              <label>
+                <span data-i18n="config.mounts.constellations">支持星系</span>
+                <input name="constellations" placeholder="GPS,GLO,GAL,BDS" />
+              </label>
+              <label>
+                <span data-i18n="config.mounts.rtcm">RTCM 消息类型 RTCM Message Types</span>
+                <input name="rtcmMessages" placeholder="1005,1077,1087,1097,1127" />
+              </label>
+              <button class="button button-primary" type="submit" data-i18n="config.mounts.save">保存挂载点</button>
+            </form>
+            <div class="table-card">
+              <h3 data-i18n="config.mounts.listTitle">所有挂载点</h3>
+              <div class="table-toolbar">
+                <input id="mountSearch" placeholder="搜索挂载点名称 Search mountpoint name" />
+                <span id="mountCount" class="muted"></span>
+              </div>
+              <div class="table-wrap">
+                <table class="mount-admin-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="col.mountpoint">挂载点</th>
+                      <th data-i18n="col.actions">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mountConfigList"></tbody>
+                </table>
+              </div>
+              <div class="pager">
+                <button id="mountPrevBtn" class="button button-secondary" type="button"
+                  data-i18n="pager.prev">上一页</button>
+                <span id="mountPageInfo" class="muted"></span>
+                <button id="mountNextBtn" class="button button-secondary" type="button"
+                  data-i18n="pager.next">下一页</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker" data-i18n="config.relay.kicker">中继配置</p>
+              <h2 data-i18n="config.relay.title">新增或更新中继</h2>
+            </div>
+          </div>
+          <div class="split split-wide">
+            <form class="card form" id="relayForm">
+              <h3 data-i18n="config.relay.formTitle">中继编辑</h3>
+              <label>
+                <span data-i18n="config.relay.name">中继名称</span>
+                <input name="name" placeholder="hk-relay-01" required />
+              </label>
+              <label>
+                <span data-i18n="config.relay.enabled">启用</span>
+                <select name="enabled">
+                  <option value="true" data-i18n="opt.enable">启用</option>
+                  <option value="false" data-i18n="opt.disable">禁用</option>
+                </select>
+              </label>
+              <label>
+                <span data-i18n="config.relay.localMount">本地挂载点</span>
+                <input name="localMount" placeholder="mount-relay" required />
+              </label>
+              <label>
+                <span data-i18n="config.relay.upstreamHost">上游主机</span>
+                <input name="upstreamHost" placeholder="ntrip.example.com" required />
+              </label>
+              <label>
+                <span data-i18n="config.relay.upstreamPort">上游端口</span>
+                <input name="upstreamPort" type="number" min="1" step="1" placeholder="2101" />
+              </label>
+              <label>
+                <span data-i18n="config.relay.upstreamMount">上游挂载点</span>
+                <input name="upstreamMount" placeholder="SRC01" required />
+              </label>
+              <label>
+                <span data-i18n="config.relay.upstreamUser">上游用户名</span>
+                <input name="username" placeholder="relay-user" />
+              </label>
+              <label>
+                <span data-i18n="config.relay.upstreamPass">上游密码</span>
+                <input name="password" type="password" placeholder="留空则保持原值或匿名" />
+              </label>
+              <div class="form-grid">
+                <label>
+                  <span data-i18n="config.relay.clusterRadius">聚类半径</span>
+                  <input name="clusterRadiusKm" type="number" min="1" step="0.1" placeholder="30" />
+                </label>
+                <label>
+                  <span data-i18n="config.relay.clusterSlots">聚类槽位</span>
+                  <input name="clusterSlots" type="number" min="1" step="1" placeholder="2" />
+                </label>
+              </div>
+              <label>
+                <span data-i18n="config.relay.ntripVer">NTRIP 版本 NTRIP Version</span>
+                <select name="ntripVersion">
+                  <option value="1">Rev1</option>
+                  <option value="2">Rev2</option>
+                </select>
+              </label>
+              <label>
+                <span data-i18n="config.relay.accountPool">账号池</span>
+                <textarea name="accountPool" class="relay-pool-textarea" rows="6"
+                  placeholder="name,username,password[,enabled][,expiresAtRFC3339]"></textarea>
+              </label>
+              <label>
+                <span data-i18n="config.relay.staticGga">静态</span>
+                <textarea name="ggaSentence" rows="3" placeholder="$GPGGA,..."></textarea>
+              </label>
+              <label>
+                <span data-i18n="config.relay.ggaInterval">GGA 间隔秒数 GGA Interval (s)</span>
+                <input name="ggaIntervalSeconds" type="number" min="0" step="1" placeholder="5" />
+              </label>
+              <label>
+                <span data-i18n="config.relay.desc">描述</span>
+                <textarea name="description" rows="3" placeholder="上游来源、地区、用途"></textarea>
+              </label>
+              <button class="button button-primary" type="submit" data-i18n="config.relay.save">保存中继</button>
+            </form>
+            <div class="table-card">
+              <h3 data-i18n="config.relay.listTitle">所有中继</h3>
+              <div class="table-toolbar">
+                <input id="relaySearch" placeholder="搜索中继、本地挂载点、上游地址 Search relay / local mount / upstream" />
+                <span id="relayCount" class="muted"></span>
+              </div>
+              <div class="table-wrap">
+                <table class="relay-admin-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="col.relay">中继</th>
+                      <th data-i18n="col.actions">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="relayConfigList"></tbody>
+                </table>
+              </div>
+              <div class="pager">
+                <button id="relayPrevBtn" class="button button-secondary" type="button"
+                  data-i18n="pager.prev">上一页</button>
+                <span id="relayPageInfo" class="muted"></span>
+                <button id="relayNextBtn" class="button button-secondary" type="button"
+                  data-i18n="pager.next">下一页</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- PAGE: 系统 System -->
+      <!-- ================================================================ -->
+      <section id="pageSettings" class="page-section page-hidden">
+
+        <!-- Language Selector -->
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker" data-i18n="system.lang.kicker">界面语言</p>
+              <h2 data-i18n="system.lang.title">语言设置</h2>
+            </div>
+          </div>
+          <div class="split split-wide">
+            <div class="card form">
+              <h3 data-i18n="system.lang.choose">选择显示语言</h3>
+              <label>
+                <span data-i18n="system.lang.label">语言</span>
+                <select id="langSelect">
+                  <option value="zh">中文</option>
+                  <option value="en">English</option>
+                </select>
+              </label>
+              <p class="muted" data-i18n="system.lang.desc">切换后界面标签将以所选语言显示。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker" data-i18n="system.auth.kicker">认证管理</p>
+              <h2 data-i18n="system.auth.title">当前管理员与登录方式</h2>
+            </div>
+          </div>
+          <div class="split split-wide">
+            <form class="card form" id="adminProfileForm">
+              <h3 data-i18n="system.auth.adminTitle">当前管理员</h3>
+              <label>
+                <span data-i18n="system.auth.localLogin">启用用户名密码登录</span>
+                <select name="enabled">
+                  <option value="true" data-i18n="opt.enable">启用</option>
+                  <option value="false" data-i18n="opt.disable">禁用</option>
+                </select>
+              </label>
+              <label>
+                <span data-i18n="config.users.username">用户名</span>
+                <input name="username" placeholder="admin" required />
+              </label>
+              <label>
+                <span data-i18n="system.auth.newPass">新密码</span>
+                <input name="password" type="password" placeholder="留空则不修改 / Leave blank to keep current" />
+              </label>
+              <button class="button button-primary" type="submit" data-i18n="system.auth.saveAdmin">保存管理员</button>
+            </form>
+            <form class="card form" id="authSettingsForm">
+              <h3 data-i18n="system.auth.loginMethod">登录方式</h3>
+              <label>
+                <span data-i18n="system.auth.oidcEnabled">启用</span>
+                <select name="oidcEnabled">
+                  <option value="false" data-i18n="opt.disable">禁用</option>
+                  <option value="true" data-i18n="opt.enable">启用</option>
+                </select>
+              </label>
+              <label>
+                <span data-i18n="system.auth.oidcProvider">OIDC 提供方 OIDC Provider</span>
+                <input name="provider" value="pocketid" readonly />
+              </label>
+              <label>
+                <span>Issuer URL</span>
+                <input name="issuerURL" placeholder="https://auth.example.com" />
+              </label>
+              <label>
+                <span>Client ID</span>
+                <input name="clientID" placeholder="client-id" />
+              </label>
+              <label>
+                <span>Client Secret</span>
+                <input name="clientSecret" type="password" placeholder="client-secret" />
+              </label>
+              <label>
+                <span>Redirect URL</span>
+                <input name="redirectURL" placeholder="https://caster.example.com/api/v1/auth/oidc/callback" />
+              </label>
+              <button class="button button-primary" type="submit" data-i18n="system.auth.saveLogin">保存登录方式</button>
+            </form>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker" data-i18n="system.limits.kicker">运行配额</p>
+              <h2 data-i18n="system.limits.title">接入上限与资源控制</h2>
+            </div>
+          </div>
+          <div class="split split-wide">
+            <form class="card form" id="limitsForm">
+              <h3 data-i18n="system.limits.editTitle">编辑限制</h3>
+              <label>
+                <span data-i18n="system.limits.maxClients">最大</span>
+                <input name="maxClients" type="number" min="0" step="1" />
+              </label>
+              <label>
+                <span data-i18n="system.limits.maxSources">最大</span>
+                <input name="maxSources" type="number" min="0" step="1" />
+              </label>
+              <label>
+                <span data-i18n="system.limits.maxPending">最大</span>
+                <input name="maxPending" type="number" min="0" step="1" />
+              </label>
+              <label>
+                <span data-i18n="system.limits.maxConn">最大并发连接</span>
+                <input name="maxConnections" type="number" min="0" step="1" />
+              </label>
+              <button class="button button-primary" type="submit" data-i18n="system.limits.save">保存限制</button>
+            </form>
+            <div class="card">
+              <h3 data-i18n="system.limits.currentTitle">当前限制</h3>
+              <div class="quota-grid" id="quotaGrid"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker" data-i18n="system.block.kicker">访问控制</p>
+              <h2 data-i18n="system.block.title">IP 封锁名单 IP Block List</h2>
+            </div>
+          </div>
+          <div class="split split-wide">
+            <form class="card form" id="blockForm">
+              <h3 data-i18n="system.block.addTitle">添加封锁规则</h3>
+              <label>
+                <span>IP / CIDR</span>
+                <input name="ip" placeholder="203.0.113.10 / 203.0.113.0/24" required />
+              </label>
+              <label>
+                <span data-i18n="system.block.expires">过期时间</span>
+                <input name="expiresAt" placeholder="可选，例如 2026-04-01T00:00:00Z" />
+              </label>
+              <label>
+                <span data-i18n="system.block.reason">原因</span>
+                <textarea name="reason" rows="3" placeholder="刷流量、暴力连接等"></textarea>
+              </label>
+              <button class="button button-primary" type="submit" data-i18n="system.block.addBtn">加入封锁列表</button>
+            </form>
+            <div class="table-card">
+              <h3 data-i18n="system.block.listTitle">当前封锁列表</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th data-i18n="col.address">地址</th>
+                      <th data-i18n="col.reason">原因</th>
+                      <th data-i18n="col.expires">到期时间</th>
+                      <th data-i18n="col.actions">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="blockTable"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+</body>
+
+</html>
