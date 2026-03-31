@@ -38,6 +38,11 @@ body {
   overflow-x: hidden;
 }
 
+body.auth-pending #authScreen,
+body.auth-pending #appShell {
+  display: none !important;
+}
+
 .bg-orb {
   position: fixed;
   inset: auto;

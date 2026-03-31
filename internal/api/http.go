@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -149,7 +151,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	token, err := s.svc.Login(payload.Username, payload.Password, r.RemoteAddr)
+	remoteAddr := clientRemoteAddr(r)
+	token, err := s.svc.Login(payload.Username, payload.Password, remoteAddr)
 	if err != nil {
 		status := http.StatusUnauthorized
 		message := "admin login failed"
@@ -164,7 +167,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			Resource:   "admin_session",
 			ResourceID: payload.Username,
 			Status:     "error",
-			RemoteAddr: r.RemoteAddr,
+			RemoteAddr: remoteAddr,
 			Message:    message,
 		})
 		http.Error(w, `{"error":"login failed"}`, status)
@@ -183,7 +186,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Resource:   "admin_session",
 		ResourceID: payload.Username,
 		Status:     "ok",
-		RemoteAddr: r.RemoteAddr,
+		RemoteAddr: remoteAddr,
 		Message:    "admin login succeeded",
 	})
 	writeJSON(w, map[string]any{"ok": true})
@@ -200,7 +203,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 			Action:     "auth.logout",
 			Resource:   "admin_session",
 			Status:     "ok",
-			RemoteAddr: r.RemoteAddr,
+			RemoteAddr: clientRemoteAddr(r),
 			Message:    "admin logout",
 		})
 		s.svc.Logout(cookie.Value)
@@ -274,10 +277,61 @@ func (s *Server) auditRequest(r *http.Request, action, resource, resourceID, sta
 		Resource:   resource,
 		ResourceID: resourceID,
 		Status:     status,
-		RemoteAddr: r.RemoteAddr,
+		RemoteAddr: clientRemoteAddr(r),
 		Message:    message,
 		Details:    details,
 	})
+}
+
+func clientRemoteAddr(r *http.Request) string {
+	for _, candidate := range []string{
+		forwardedHeaderAddr(r.Header.Get("Forwarded")),
+		firstForwardedAddr(r.Header.Get("X-Forwarded-For")),
+		strings.TrimSpace(r.Header.Get("X-Real-Ip")),
+		strings.TrimSpace(r.RemoteAddr),
+	} {
+		if addr := normalizeClientAddr(candidate); addr != "" {
+			return addr
+		}
+	}
+	return ""
+}
+
+func forwardedHeaderAddr(value string) string {
+	for _, part := range strings.Split(value, ",") {
+		for _, token := range strings.Split(part, ";") {
+			key, raw, ok := strings.Cut(strings.TrimSpace(token), "=")
+			if !ok || !strings.EqualFold(strings.TrimSpace(key), "for") {
+				continue
+			}
+			return strings.TrimSpace(raw)
+		}
+	}
+	return ""
+}
+
+func firstForwardedAddr(value string) string {
+	head := strings.TrimSpace(strings.Split(value, ",")[0])
+	return head
+}
+
+func normalizeClientAddr(value string) string {
+	value = strings.TrimSpace(strings.Trim(value, `"`))
+	if value == "" || strings.EqualFold(value, "unknown") {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		value = strings.TrimSpace(host)
+	}
+	value = strings.TrimPrefix(value, "[")
+	value = strings.TrimSuffix(value, "]")
+	if addr, err := netip.ParseAddr(value); err == nil {
+		return addr.String()
+	}
+	if addrPort, err := netip.ParseAddrPort(value); err == nil {
+		return addrPort.Addr().String()
+	}
+	return value
 }
 
 func (s *Server) handleCurrentAdmin(w http.ResponseWriter, r *http.Request) {

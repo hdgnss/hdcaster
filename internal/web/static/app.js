@@ -3,6 +3,7 @@
 
   const state = {
     loading: true,
+    authResolved: false,
     connected: false,
     authenticated: false,
     authConfig: null,
@@ -573,21 +574,25 @@
   }
 
   function render() {
-    const authReady = !!state.authConfig;
+    const authResolved = !!state.authResolved;
     const localEnabled = !!state.authConfig?.local?.enabled;
     const oidcEnabled = !!state.authConfig?.oidc?.enabled;
 
     applyI18n();
 
-    els.authScreen.style.display = state.authenticated ? "none" : "grid";
-    els.appShell.classList.toggle("shell-hidden", !state.authenticated);
-    els.loginForm.style.display = localEnabled ? "grid" : "none";
-    els.authDivider.style.display = localEnabled && oidcEnabled ? "flex" : "none";
-    els.oidcLoginBtn.style.display = oidcEnabled ? "block" : "none";
-    els.oidcLoginBtn.textContent = state.authConfig?.oidc?.label || (state.lang === "en" ? "Login with HDGNSS" : "HDGNSS 登录");
-    els.authMessage.textContent = state.authMessage ? decodeURIComponent(state.authMessage) : "";
+    document.body.classList.toggle("auth-pending", !authResolved);
 
-    if (!state.authenticated) return;
+    els.authScreen.style.display = authResolved && !state.authenticated ? "grid" : "none";
+    els.appShell.classList.toggle("shell-hidden", !authResolved || !state.authenticated);
+    els.loginForm.style.display = authResolved && localEnabled ? "grid" : "none";
+    els.authDivider.style.display = authResolved && localEnabled && oidcEnabled ? "flex" : "none";
+    els.oidcLoginBtn.style.display = authResolved && oidcEnabled ? "block" : "none";
+    els.oidcLoginBtn.textContent = state.authConfig?.oidc?.label || (state.lang === "en" ? "Login with HDGNSS" : "HDGNSS 登录");
+    els.authMessage.textContent = authResolved
+      ? (state.authMessage ? decodeURIComponent(state.authMessage) : "")
+      : lv("正在检查登录状态…", "Checking session...");
+
+    if (!authResolved || !state.authenticated) return;
 
     renderPageTabs();
     renderShellStatus();
@@ -1395,6 +1400,7 @@
       setState({
         authConfig,
         authSession,
+        authResolved: true,
         authenticated: !!authSession?.authenticated,
         authMessage: state.authMessage,
       });
@@ -1409,6 +1415,7 @@
     } catch {
       setState({
         authConfig: { local: { enabled: true, label: "用户名密码登录" }, oidc: { enabled: false } },
+        authResolved: true,
         authenticated: false,
         authMessage: "认证配置读取失败，请稍后刷新重试",
         loading: false,
@@ -1452,6 +1459,7 @@
         : null;
       setState({
         connected: true,
+        authResolved: true,
         loading: false,
         authenticated: !!authSession?.authenticated,
         lastUpdated: new Date(),
@@ -1478,6 +1486,7 @@
     } catch (error) {
       if (error.code === 401) {
         setState({
+          authResolved: true,
           authenticated: false,
           loading: false,
           connected: false,
@@ -1498,6 +1507,7 @@
         return;
       }
       setState({
+        authResolved: true,
         connected: false,
         loading: false,
         lastUpdated: new Date(),
@@ -1545,6 +1555,7 @@
     } catch (error) {
       if (error.code === 401) {
         setState({
+          authResolved: true,
           authenticated: false,
           loading: false,
           connected: false,
@@ -1606,7 +1617,7 @@
     try {
       await api.login({ username: form.get("username"), password: form.get("password") });
       history.replaceState({}, "", window.location.pathname);
-      setState({ authenticated: true, authMessage: "" });
+      setState({ authResolved: true, authenticated: true, authMessage: "" });
       await reload();
       syncHomeAutoRefresh();
     } catch {
@@ -1628,7 +1639,7 @@
   });
   els.logoutBtn.addEventListener("click", async () => {
     await api.logout();
-    setState({ authenticated: false, authSession: null, adminProfile: null, authSettings: null, authMessage: "" });
+    setState({ authResolved: true, authenticated: false, authSession: null, adminProfile: null, authSettings: null, authMessage: "" });
     syncHomeAutoRefresh();
   });
   els.refreshBtn.addEventListener("click", reload);
